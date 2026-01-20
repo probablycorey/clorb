@@ -13,9 +13,6 @@ packages:
 runcmd:
   # Install Bun
   - curl -fsSL https://bun.sh/install | bash
-  # Add bun to path for this script
-  - export BUN_INSTALL="/root/.bun"
-  - export PATH="$BUN_INSTALL/bin:$PATH"
   # Install Claude Code globally
   - /root/.bun/bin/bun install -g @anthropic-ai/claude-code
   # Add default user to docker group
