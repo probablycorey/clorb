@@ -3,7 +3,6 @@ package_update: true
 packages:
   - docker.io
   - git
-  - lazygit
   - ripgrep
   - fd-find
   - jq
@@ -11,6 +10,13 @@ packages:
   - unzip
 
 runcmd:
+  # Install lazygit from GitHub releases
+  - |
+    LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep -Po '"tag_name": "v\K[^"]*')
+    curl -Lo lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/latest/download/lazygit_${LAZYGIT_VERSION}_Linux_arm64.tar.gz"
+    tar xf lazygit.tar.gz lazygit
+    install lazygit /usr/local/bin
+    rm lazygit lazygit.tar.gz
   # Install Bun
   - curl -fsSL https://bun.sh/install | bash
   # Install Claude Code globally
