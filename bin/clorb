@@ -45,7 +45,7 @@ if ! orb list | grep -q "^$VM_NAME "; then
         orb -m "$VM_NAME" cat /var/log/cloud-init-output.log | tail -50
         echo "----------------------------------------"
         echo "Cleaning up failed VM..."
-        orb delete "$VM_NAME"
+        orb delete -f "$VM_NAME"
         exit 1
     fi
 fi
@@ -53,7 +53,7 @@ fi
 # Check if existing VM has failed cloud-init
 if orb -m "$VM_NAME" cloud-init status 2>/dev/null | grep -q "status: error"; then
     echo "Existing VM has failed provisioning. Recreating..."
-    orb delete "$VM_NAME"
+    orb delete -f "$VM_NAME"
     exec "$0" "$@"
 fi
 
