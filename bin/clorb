@@ -34,3 +34,24 @@ if ! orb list | grep "^$VM_NAME " | grep -q "running"; then
 fi
 
 echo "VM ready."
+
+# Mount ~/.claude from Mac and run Claude
+MAC_CLAUDE_DIR="$HOME/.claude"
+
+orb -m "$VM_NAME" bash -c "
+    # Ensure ~/.claude exists and is linked to Mac's
+    mkdir -p ~/.claude
+
+    # Bind mount Mac's .claude if not already mounted
+    if ! mountpoint -q ~/.claude 2>/dev/null; then
+        sudo mount --bind /mnt/mac${MAC_CLAUDE_DIR} ~/.claude 2>/dev/null || true
+    fi
+
+    # Add bun to PATH
+    export BUN_INSTALL=\"\$HOME/.bun\"
+    export PATH=\"\$BUN_INSTALL/bin:\$PATH\"
+
+    # Change to project directory and run Claude
+    cd '$VM_PATH'
+    claude --dangerously-skip-permissions
+"
