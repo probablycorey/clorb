@@ -6,6 +6,13 @@ REPO_DIR="$(dirname "$SCRIPT_DIR")"
 VM_NAME="claude-agent"
 CLOUD_INIT="$REPO_DIR/cloud-init.yaml"
 
+# Check for OrbStack
+if ! command -v orb &>/dev/null; then
+    echo "Error: OrbStack is not installed."
+    echo "Install it from: https://orbstack.dev"
+    exit 1
+fi
+
 # Require path argument
 if [[ -z "$1" ]]; then
     echo "Usage: clorb <path>"
