@@ -1,0 +1,36 @@
+#!/bin/bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+VM_NAME="claude-agent"
+CLOUD_INIT="$REPO_DIR/cloud-init.yaml"
+
+# Require path argument
+if [[ -z "$1" ]]; then
+    echo "Usage: clorb <path>"
+    echo "Example: clorb . | clorb ~/projects/my-app"
+    exit 1
+fi
+
+# Resolve to absolute path
+TARGET_PATH="$(cd "$1" && pwd)"
+
+# Convert to VM path
+VM_PATH="/mnt/mac${TARGET_PATH}"
+
+# Check if VM exists
+if ! orb list | grep -q "^$VM_NAME "; then
+    echo "Creating VM '$VM_NAME'..."
+    orb create ubuntu:noble "$VM_NAME" --user-data "$CLOUD_INIT"
+    echo "Waiting for cloud-init to complete (this may take a minute)..."
+    orb -m "$VM_NAME" cloud-init status --wait
+fi
+
+# Check if VM is running
+if ! orb list | grep "^$VM_NAME " | grep -q "running"; then
+    echo "Starting VM '$VM_NAME'..."
+    orb start "$VM_NAME"
+fi
+
+echo "VM ready."
