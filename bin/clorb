@@ -38,7 +38,15 @@ if ! orb list | grep -q "^$VM_NAME "; then
     echo "Creating VM '$VM_NAME'..."
     orb create ubuntu:noble "$VM_NAME" --user-data "$CLOUD_INIT"
     echo "Waiting for cloud-init to complete (this may take a minute)..."
-    orb -m "$VM_NAME" cloud-init status --wait
+    if ! orb -m "$VM_NAME" cloud-init status --wait; then
+        echo ""
+        echo "cloud-init failed. Logs:"
+        echo "----------------------------------------"
+        orb -m "$VM_NAME" cat /var/log/cloud-init-output.log | tail -50
+        echo "----------------------------------------"
+        echo "To retry: orb delete $VM_NAME && clorb <path>"
+        exit 1
+    fi
 fi
 
 # Check if VM is running
