@@ -39,7 +39,7 @@ fi
 # Run Claude in container with only project and credentials mounted
 docker run -it --rm \
     -v "$TARGET_PATH:/workspace" \
-    -v "$HOME/.claude:/root/.claude" \
+    -v "$HOME/.claude:/home/clorb/.claude" \
     -w /workspace \
     "$IMAGE_NAME" \
     --dangerously-skip-permissions
