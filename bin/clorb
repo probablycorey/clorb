@@ -11,7 +11,6 @@ done
 SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 VM_NAME="claude-agent"
-CLOUD_INIT="$REPO_DIR/cloud-init.yaml"
 
 # Check for OrbStack
 if ! command -v orb &>/dev/null; then
@@ -36,25 +35,23 @@ VM_PATH="/mnt/mac${TARGET_PATH}"
 # Check if VM exists
 if ! orb list | grep -q "^$VM_NAME "; then
     echo "Creating VM '$VM_NAME'..."
-    orb create ubuntu:noble "$VM_NAME" --user-data "$CLOUD_INIT"
-    echo "Waiting for cloud-init to complete (this may take a minute)..."
-    if ! orb -m "$VM_NAME" cloud-init status --wait; then
-        echo ""
-        echo "cloud-init failed. Logs:"
-        echo "----------------------------------------"
-        orb -m "$VM_NAME" cat /var/log/cloud-init-output.log | tail -100
-        echo "----------------------------------------"
-        echo "Cleaning up failed VM..."
-        orb delete -f "$VM_NAME"
-        exit 1
-    fi
-fi
+    orb create ubuntu:noble "$VM_NAME"
 
-# Check if existing VM has failed cloud-init
-if orb -m "$VM_NAME" cloud-init status 2>/dev/null | grep -q "status: error"; then
-    echo "Existing VM has failed provisioning. Recreating..."
-    orb delete -f "$VM_NAME"
-    exec "$0" "$@"
+    echo "Installing packages..."
+    orb -m "$VM_NAME" sudo apt-get update
+    orb -m "$VM_NAME" sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        docker.io git ripgrep fd-find jq curl unzip
+
+    echo "Installing Bun..."
+    orb -m "$VM_NAME" bash -c 'curl -fsSL https://bun.sh/install | bash'
+
+    echo "Installing Claude Code..."
+    orb -m "$VM_NAME" bash -c 'export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH" && bun install -g @anthropic-ai/claude-code'
+
+    echo "Configuring Docker..."
+    orb -m "$VM_NAME" sudo usermod -aG docker "\$(whoami)"
+
+    echo "Provisioning complete."
 fi
 
 # Check if VM is running
