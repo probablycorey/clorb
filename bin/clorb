@@ -13,6 +13,34 @@ REPO_DIR="$(dirname "$SCRIPT_DIR")"
 
 IMAGE_NAME="clorb"
 
+usage() {
+    cat <<EOF
+clorb - Run Claude Code in an isolated Docker container
+
+Usage: clorb [options] <path>
+
+Arguments:
+  <path>        Directory to mount and work in
+
+Options:
+  --gh          Enable GitHub CLI authentication (requires 'gh auth login')
+  --rebuild     Rebuild the Docker image and exit
+  -h, --help    Show this help message
+
+Examples:
+  clorb .                  Run Claude in the current directory
+  clorb ~/projects/myapp   Run Claude in a specific project
+  clorb --gh .             Run with GitHub CLI access for PRs and issues
+  clorb --rebuild          Rebuild the container image
+EOF
+}
+
+# Handle help flags
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    usage
+    exit 0
+fi
+
 # Check for Docker
 if ! command -v docker &>/dev/null; then
     echo "Error: Docker is not installed."
@@ -36,7 +64,9 @@ while [[ "$1" == --* ]]; do
             shift
             ;;
         *)
-            echo "Unknown flag: $1"
+            echo "Error: Unknown option '$1'"
+            echo
+            usage
             exit 1
             ;;
     esac
@@ -44,8 +74,7 @@ done
 
 # Require path argument
 if [[ -z "$1" ]]; then
-    echo "Usage: clorb [--gh] <path>"
-    echo "       clorb --rebuild"
+    usage
     exit 1
 fi
 
