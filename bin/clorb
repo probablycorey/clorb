@@ -49,7 +49,7 @@ if ! orb list | grep -q "^$VM_NAME "; then
     orb -m "$VM_NAME" bash -c 'export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH" && bun install -g @anthropic-ai/claude-code'
 
     echo "Configuring Docker..."
-    orb -m "$VM_NAME" sudo usermod -aG docker "\$(whoami)"
+    orb -m "$VM_NAME" bash -c 'sudo usermod -aG docker $(whoami)'
 
     echo "Provisioning complete."
 fi
