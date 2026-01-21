@@ -40,7 +40,7 @@ if ! orb list | grep -q "^$VM_NAME "; then
     echo "Installing packages..."
     orb -m "$VM_NAME" sudo apt-get update
     orb -m "$VM_NAME" sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        docker.io git ripgrep fd-find jq curl unzip
+        docker.io git ripgrep fd-find jq curl unzip nodejs
 
     echo "Installing Bun..."
     orb -m "$VM_NAME" bash -c 'curl -fsSL https://bun.sh/install | bash'
