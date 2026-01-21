@@ -20,10 +20,32 @@ if ! command -v docker &>/dev/null; then
     exit 1
 fi
 
+# Handle --rebuild flag
+if [[ "$1" == "--rebuild" ]]; then
+    echo "Rebuilding clorb image..."
+    docker build -t "$IMAGE_NAME" "$REPO_DIR"
+    exit 0
+fi
+
+# Parse flags
+MOUNT_GH=false
+while [[ "$1" == --* ]]; do
+    case "$1" in
+        --gh)
+            MOUNT_GH=true
+            shift
+            ;;
+        *)
+            echo "Unknown flag: $1"
+            exit 1
+            ;;
+    esac
+done
+
 # Require path argument
 if [[ -z "$1" ]]; then
-    echo "Usage: clorb <path>"
-    echo "Example: clorb . | clorb ~/projects/my-app"
+    echo "Usage: clorb [--gh] <path>"
+    echo "       clorb --rebuild"
     exit 1
 fi
 
@@ -36,13 +58,18 @@ if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
     docker build -t "$IMAGE_NAME" "$REPO_DIR"
 fi
 
-# Run Claude in container with only project and credentials mounted
-docker run -it --rm \
-    -v "$TARGET_PATH:/workspace" \
-    -v "$HOME/.claude:/home/clorb/.claude" \
-    -w /workspace \
-    "$IMAGE_NAME" \
-    --dangerously-skip-permissions
+# Build docker run arguments
+DOCKER_ARGS=(
+    -it --rm
+    -v "$TARGET_PATH:/workspace"
+    -v "clorb-claude-config:/home/clorb/.claude"
+    -v "$HOME/.gitconfig:/home/clorb/.gitconfig:ro"
+    -w /workspace
+)
 
-# Play notification sound when done
-afplay /System/Library/Sounds/Glass.aiff 2>/dev/null &
+if [[ "$MOUNT_GH" == true ]]; then
+    DOCKER_ARGS+=(-v "$HOME/.config/gh:/home/clorb/.config/gh:ro")
+fi
+
+# Run Claude in container
+docker run "${DOCKER_ARGS[@]}" "$IMAGE_NAME" --dangerously-skip-permissions

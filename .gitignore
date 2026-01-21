@@ -1,0 +1,12 @@
+# Plans (local working docs)
+docs/plans/
+
+# macOS
+.DS_Store
+
+# Editors
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
