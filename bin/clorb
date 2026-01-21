@@ -63,7 +63,7 @@ DOCKER_ARGS=(
     -it --rm
     -v "$TARGET_PATH:/workspace"
     -v "clorb-claude-config:/home/clorb/.claude"
-    -v "$HOME/.gitconfig:/home/clorb/.gitconfig:ro"
+    -v "$HOME/.gitconfig:/tmp/.gitconfig-host:ro"
     -w /workspace
 )
 
