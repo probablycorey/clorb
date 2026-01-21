@@ -29,8 +29,8 @@ fi
 # Resolve to absolute path
 TARGET_PATH="$(cd "$1" && pwd)"
 
-# Convert to VM path
-VM_PATH="/mnt/mac${TARGET_PATH}"
+# VM paths (used internally for mounting)
+MAC_PROJECT_PATH="/mnt/mac${TARGET_PATH}"
 
 # Check if VM exists
 if ! orb list | grep -q "^$VM_NAME "; then
@@ -66,10 +66,15 @@ echo "VM ready."
 MAC_CLAUDE_DIR="$HOME/.claude"
 
 orb -m "$VM_NAME" bash -c "
-    # Ensure ~/.claude exists and is linked to Mac's
-    mkdir -p ~/.claude
+    # Mount only the project directory to /workspace (not full Mac filesystem)
+    sudo mkdir -p /workspace
+    if ! mountpoint -q /workspace 2>/dev/null; then
+        sudo mount --bind '$MAC_PROJECT_PATH' /workspace
+    fi
+    sudo chown \$(whoami):\$(whoami) /workspace
 
-    # Bind mount Mac's .claude if not already mounted
+    # Mount ~/.claude for credentials
+    mkdir -p ~/.claude
     if ! mountpoint -q ~/.claude 2>/dev/null; then
         sudo mount --bind /mnt/mac${MAC_CLAUDE_DIR} ~/.claude 2>/dev/null || true
     fi
@@ -78,7 +83,7 @@ orb -m "$VM_NAME" bash -c "
     export BUN_INSTALL=\"\$HOME/.bun\"
     export PATH=\"\$BUN_INSTALL/bin:\$PATH\"
 
-    # Change to project directory and run Claude
-    cd '$VM_PATH'
+    # Work in isolated workspace
+    cd /workspace
     claude --dangerously-skip-permissions
 "
