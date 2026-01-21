@@ -10,12 +10,13 @@ while [[ -L "$SOURCE" ]]; do
 done
 SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
-VM_NAME="claude-agent"
 
-# Check for OrbStack
-if ! command -v orb &>/dev/null; then
-    echo "Error: OrbStack is not installed."
-    echo "Install it from: https://orbstack.dev"
+IMAGE_NAME="clorb"
+
+# Check for Docker
+if ! command -v docker &>/dev/null; then
+    echo "Error: Docker is not installed."
+    echo "Install OrbStack from: https://orbstack.dev"
     exit 1
 fi
 
@@ -29,61 +30,16 @@ fi
 # Resolve to absolute path
 TARGET_PATH="$(cd "$1" && pwd)"
 
-# VM paths (used internally for mounting)
-MAC_PROJECT_PATH="/mnt/mac${TARGET_PATH}"
-
-# Check if VM exists
-if ! orb list | grep -q "^$VM_NAME "; then
-    echo "Creating VM '$VM_NAME'..."
-    orb create ubuntu:noble "$VM_NAME"
-
-    echo "Installing packages..."
-    orb -m "$VM_NAME" sudo apt-get update
-    orb -m "$VM_NAME" sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        docker.io git ripgrep fd-find jq curl unzip nodejs
-
-    echo "Installing Bun..."
-    orb -m "$VM_NAME" bash -c 'curl -fsSL https://bun.sh/install | bash'
-
-    echo "Installing Claude Code..."
-    orb -m "$VM_NAME" bash -c 'export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH" && bun install -g @anthropic-ai/claude-code'
-
-    echo "Configuring Docker..."
-    orb -m "$VM_NAME" bash -c 'sudo usermod -aG docker $(whoami)'
-
-    echo "Provisioning complete."
+# Build image if it doesn't exist
+if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
+    echo "Building clorb image (first run only)..."
+    docker build -t "$IMAGE_NAME" "$REPO_DIR"
 fi
 
-# Check if VM is running
-if ! orb list | grep "^$VM_NAME " | grep -q "running"; then
-    echo "Starting VM '$VM_NAME'..."
-    orb start "$VM_NAME"
-fi
-
-echo "VM ready."
-
-# Mount ~/.claude from Mac and run Claude
-MAC_CLAUDE_DIR="$HOME/.claude"
-
-orb -m "$VM_NAME" bash -c "
-    # Mount only the project directory to /workspace (not full Mac filesystem)
-    sudo mkdir -p /workspace
-    if ! mountpoint -q /workspace 2>/dev/null; then
-        sudo mount --bind '$MAC_PROJECT_PATH' /workspace
-    fi
-    sudo chown \$(whoami):\$(whoami) /workspace
-
-    # Mount ~/.claude for credentials
-    mkdir -p ~/.claude
-    if ! mountpoint -q ~/.claude 2>/dev/null; then
-        sudo mount --bind /mnt/mac${MAC_CLAUDE_DIR} ~/.claude 2>/dev/null || true
-    fi
-
-    # Add bun to PATH
-    export BUN_INSTALL=\"\$HOME/.bun\"
-    export PATH=\"\$BUN_INSTALL/bin:\$PATH\"
-
-    # Work in isolated workspace
-    cd /workspace
-    claude --dangerously-skip-permissions
-"
+# Run Claude in container with only project and credentials mounted
+docker run -it --rm \
+    -v "$TARGET_PATH:/workspace" \
+    -v "$HOME/.claude:/root/.claude" \
+    -w /workspace \
+    "$IMAGE_NAME" \
+    --dangerously-skip-permissions
