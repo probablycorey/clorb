@@ -43,3 +43,6 @@ docker run -it --rm \
     -w /workspace \
     "$IMAGE_NAME" \
     --dangerously-skip-permissions
+
+# Play notification sound when done
+afplay /System/Library/Sounds/Glass.aiff 2>/dev/null &
