@@ -10,9 +10,10 @@ packages:
   - unzip
 
 runcmd:
-  # Install Bun
+  - echo "=== Installing Bun ==="
   - curl -fsSL https://bun.sh/install | bash
-  # Install Claude Code globally
+  - echo "=== Bun installed, installing Claude Code ==="
   - /root/.bun/bin/bun install -g @anthropic-ai/claude-code
-  # Add default user to docker group
+  - echo "=== Claude Code installed ==="
   - usermod -aG docker $(getent passwd 1000 | cut -d: -f1)
+  - echo "=== Provisioning complete ==="

@@ -42,7 +42,7 @@ if ! orb list | grep -q "^$VM_NAME "; then
         echo ""
         echo "cloud-init failed. Logs:"
         echo "----------------------------------------"
-        orb -m "$VM_NAME" cat /var/log/cloud-init-output.log | tail -50
+        orb -m "$VM_NAME" cat /var/log/cloud-init-output.log | tail -100
         echo "----------------------------------------"
         echo "Cleaning up failed VM..."
         orb delete -f "$VM_NAME"
