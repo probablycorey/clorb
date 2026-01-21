@@ -49,8 +49,9 @@ if [[ -z "$1" ]]; then
     exit 1
 fi
 
-# Resolve to absolute path
+# Resolve to absolute path and get directory name
 TARGET_PATH="$(cd "$1" && pwd)"
+DIR_NAME="$(basename "$TARGET_PATH")"
 
 # Build image if it doesn't exist
 if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
@@ -61,14 +62,19 @@ fi
 # Build docker run arguments
 DOCKER_ARGS=(
     -it --rm
-    -v "$TARGET_PATH:/workspace"
+    -v "$TARGET_PATH:/$DIR_NAME"
     -v "clorb-claude-config:/home/clorb/.claude"
     -v "$HOME/.gitconfig:/tmp/.gitconfig-host:ro"
-    -w /workspace
+    -w "/$DIR_NAME"
 )
 
 if [[ "$MOUNT_GH" == true ]]; then
-    DOCKER_ARGS+=(-v "$HOME/.config/gh:/home/clorb/.config/gh:ro")
+    GH_TOKEN=$(gh auth token 2>/dev/null)
+    if [[ -z "$GH_TOKEN" ]]; then
+        echo "Error: gh is not authenticated. Run 'gh auth login' first."
+        exit 1
+    fi
+    DOCKER_ARGS+=(-e "GH_TOKEN=$GH_TOKEN")
 fi
 
 # Run Claude in container
