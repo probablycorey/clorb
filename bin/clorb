@@ -1,15 +1,11 @@
 #!/usr/bin/env bun
 
-import { $ } from "bun";
 import { existsSync } from "fs";
-import { resolve, dirname, basename } from "path";
+import { resolve } from "path";
+import { verifyGitStatus } from "./lib/preflight.ts";
+import { dockerExists, buildImage, getGhToken, runContainer } from "./lib/docker.ts";
 
-const SCRIPT_DIR = dirname(Bun.main);
-const REPO_DIR = dirname(SCRIPT_DIR);
-const IMAGE_NAME = "clorb";
-
-function usage() {
-  console.log(`clorb - Run Claude Code in an isolated Docker container
+const USAGE = `clorb - Run Claude Code in an isolated Docker container
 
 Usage: clorb [options] <path>
 
@@ -25,58 +21,22 @@ Examples:
   clorb .                  Run Claude in the current directory
   clorb ~/projects/myapp   Run Claude in a specific project
   clorb --gh .             Run with GitHub CLI access for PRs and issues
-  clorb --rebuild          Rebuild the container image`);
-}
-
-async function dockerExists(): Promise<boolean> {
-  try {
-    await $`docker --version`.quiet();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function imageExists(): Promise<boolean> {
-  try {
-    await $`docker image inspect ${IMAGE_NAME}`.quiet();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function buildImage() {
-  console.log("Building clorb image...");
-  await $`docker build -t ${IMAGE_NAME} ${REPO_DIR}`;
-}
-
-async function getGhToken(): Promise<string | null> {
-  try {
-    const result = await $`gh auth token`.quiet();
-    return result.text().trim() || null;
-  } catch {
-    return null;
-  }
-}
+  clorb --rebuild          Rebuild the container image`;
 
 async function main() {
   const args = process.argv.slice(2);
 
-  // Handle help
   if (args.includes("-h") || args.includes("--help")) {
-    usage();
+    console.log(USAGE);
     process.exit(0);
   }
 
-  // Check docker
   if (!(await dockerExists())) {
     console.error("Error: Docker is not installed.");
     console.error("Install OrbStack from: https://orbstack.dev");
     process.exit(1);
   }
 
-  // Handle --rebuild
   if (args.includes("--rebuild")) {
     await buildImage();
     process.exit(0);
@@ -85,23 +45,18 @@ async function main() {
   // Parse flags
   let mountGh = false;
   const remaining: string[] = [];
-
   for (const arg of args) {
-    if (arg === "--gh") {
-      mountGh = true;
-    } else if (!arg.startsWith("--")) {
-      remaining.push(arg);
-    } else {
-      console.error(`Error: Unknown option '${arg}'`);
-      console.error();
-      usage();
+    if (arg === "--gh") mountGh = true;
+    else if (!arg.startsWith("--")) remaining.push(arg);
+    else {
+      console.error(`Error: Unknown option '${arg}'\n`);
+      console.log(USAGE);
       process.exit(1);
     }
   }
 
-  // Require path
   if (remaining.length === 0) {
-    usage();
+    console.log(USAGE);
     process.exit(1);
   }
 
@@ -111,15 +66,10 @@ async function main() {
     process.exit(1);
   }
 
-  const dirName = basename(targetPath);
-
-  // Build image if needed
-  if (!(await imageExists())) {
-    console.log("Building clorb image (first run only)...");
-    await buildImage();
+  if (!(await verifyGitStatus(targetPath))) {
+    process.exit(0);
   }
 
-  // Get gh token if requested
   let ghToken: string | null = null;
   if (mountGh) {
     ghToken = await getGhToken();
@@ -129,32 +79,7 @@ async function main() {
     }
   }
 
-  // Spawn the shell script for TTY handling
-  const runScript = resolve(SCRIPT_DIR, "run.sh");
-
-  // Filter out undefined env values
-  const baseEnv: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined) baseEnv[k] = v;
-  }
-
-  const env: Record<string, string> = {
-    ...baseEnv,
-    CLORB_TARGET_PATH: targetPath,
-    CLORB_DIR_NAME: dirName,
-    CLORB_IMAGE_NAME: IMAGE_NAME,
-  };
-
-  if (ghToken) {
-    env.GH_TOKEN = ghToken;
-  }
-
-  const proc = Bun.spawn(["bash", runScript], {
-    stdio: ["inherit", "inherit", "inherit"],
-    env,
-  });
-
-  const exitCode = await proc.exited;
+  const exitCode = await runContainer(targetPath, ghToken);
   process.exit(exitCode);
 }
 
