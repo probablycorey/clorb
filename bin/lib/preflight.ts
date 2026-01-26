@@ -1,4 +1,5 @@
 import { $ } from "bun";
+import { isGitRepo } from "./git.ts";
 
 interface GitStatus {
   isRepo: boolean;
@@ -13,10 +14,8 @@ async function checkGitStatus(path: string): Promise<GitStatus> {
   const status: GitStatus = { isRepo: false, issues: [] };
 
   // Check if it's a git repo
-  try {
-    await $`git -C ${path} rev-parse --git-dir`.quiet();
-    status.isRepo = true;
-  } catch {
+  status.isRepo = await isGitRepo(path);
+  if (!status.isRepo) {
     return status;
   }
 
