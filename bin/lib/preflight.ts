@@ -1,5 +1,4 @@
 import { $ } from "bun";
-import * as readline from "readline";
 
 interface GitStatus {
   isRepo: boolean;
@@ -67,30 +66,21 @@ async function checkGitStatus(path: string): Promise<GitStatus> {
   return status;
 }
 
-async function promptContinue(issues: string[]): Promise<boolean> {
+function promptContinue(issues: string[]): boolean {
   console.log("\nGit status check found issues:");
   for (const issue of issues) {
     console.log(`  - ${issue}`);
   }
   console.log();
 
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) => {
-    rl.question("Continue anyway? [y/N] ", (answer) => {
-      rl.close();
-      resolve(answer.toLowerCase() === "y");
-    });
-  });
+  const answer = prompt("Continue anyway? [y/N]");
+  return answer?.toLowerCase() === "y";
 }
 
 export async function verifyGitStatus(path: string): Promise<boolean> {
   const gitStatus = await checkGitStatus(path);
   if (gitStatus.isRepo && gitStatus.issues.length > 0) {
-    return await promptContinue(gitStatus.issues);
+    return promptContinue(gitStatus.issues);
   }
   return true;
 }

@@ -2,7 +2,7 @@
 
 import { existsSync } from "fs";
 import { resolve } from "path";
-import { verifyGitStatus } from "./lib/git-check.ts";
+import { verifyGitStatus } from "./lib/preflight.ts";
 import { dockerExists, buildImage, getGhToken, runContainer } from "./lib/docker.ts";
 
 const USAGE = `clorb - Run Claude Code in an isolated Docker container
