@@ -6,10 +6,10 @@ if [[ -f /tmp/.gitconfig-host ]]; then
     cp /tmp/.gitconfig-host ~/.gitconfig
 fi
 
-# Setup gh credential helper if token is provided
+# Setup git credential helper if GH_TOKEN is provided
+# gh CLI automatically uses GH_TOKEN env var for auth
 if [[ -n "$GH_TOKEN" ]]; then
-    echo "$GH_TOKEN" | gh auth login --with-token 2>/dev/null
-    gh auth setup-git 2>/dev/null || true
+    gh auth setup-git || true
 fi
 
 # Run Claude
