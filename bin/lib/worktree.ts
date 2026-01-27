@@ -9,7 +9,13 @@ export function sanitizeBranchName(input: string): string {
 
 export function generateBranchName(): string {
   const now = new Date();
-  const date = now.toISOString().slice(0, 10).replace(/-/g, "");
-  const time = now.toISOString().slice(11, 19).replace(/:/g, "");
-  return `clorb-${date}-${time}`;
+  const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const month = months[now.getMonth()];
+  const day = now.getDate();
+  const hours = now.getHours();
+  const minutes = now.getMinutes();
+  const ampm = hours >= 12 ? "pm" : "am";
+  const hour12 = hours % 12 || 12;
+  const time = `${hour12}${minutes.toString().padStart(2, "0")}${ampm}`;
+  return `clorb-${month}-${day}-${time}`;
 }

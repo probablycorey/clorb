@@ -34,8 +34,9 @@ describe("sanitizeBranchName", () => {
 });
 
 describe("generateBranchName", () => {
-  test("generates clorb-<timestamp> format", () => {
+  test("generates human-readable clorb-mon-day-time format", () => {
     const name = generateBranchName();
-    expect(name).toMatch(/^clorb-\d{8}-\d{6}$/);
+    // e.g. clorb-jan-26-707am or clorb-dec-5-1145pm
+    expect(name).toMatch(/^clorb-(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)-\d{1,2}-\d{1,2}\d{2}(am|pm)$/);
   });
 });
