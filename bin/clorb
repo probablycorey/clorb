@@ -4,21 +4,26 @@ import { existsSync } from "fs";
 import { resolve } from "path";
 import { verifyGitStatus } from "./lib/preflight.ts";
 import { dockerExists, buildImage, getGhToken, runContainer } from "./lib/docker.ts";
+import { setupWorktree } from "./lib/worktree.ts";
 
 const USAGE = `clorb - Run Claude Code in an isolated Docker container
 
 Usage: clorb [options] <path>
 
 Arguments:
-  <path>        Directory to mount and work in
+  <path>        Directory to mount and work in (must be a git repo)
 
 Options:
   --gh          Enable GitHub CLI authentication (requires 'gh auth login')
   --rebuild     Rebuild the Docker image and exit
   -h, --help    Show this help message
 
+Behavior:
+  clorb always creates a git worktree for isolated work. You'll be prompted
+  for a branch name (press Enter for auto-generated name).
+
 Examples:
-  clorb .                  Run Claude in the current directory
+  clorb .                  Run Claude in a new worktree (prompts for branch)
   clorb ~/projects/myapp   Run Claude in a specific project
   clorb --gh .             Run with GitHub CLI access for PRs and issues
   clorb --rebuild          Rebuild the container image`;
@@ -70,6 +75,25 @@ async function main() {
     process.exit(0);
   }
 
+  // Always create worktree - prompt for branch name
+  const branchInput = prompt("Branch name (press Enter for auto-generated):") || "";
+
+  const result = await setupWorktree(targetPath, branchInput);
+
+  if (result.error) {
+    console.error(`Error: ${result.error}`);
+    process.exit(1);
+  }
+
+  console.log(`Created worktree: ${result.worktreePath}`);
+  console.log(`Branch: ${result.branchName}`);
+
+  if (result.worktreeCount && result.worktreeCount > 5) {
+    console.log(`\nNote: You have ${result.worktreeCount} worktrees in /tmp/clorb/`);
+  }
+
+  const containerPath = result.worktreePath!;
+
   let ghToken: string | null = null;
   if (mountGh) {
     ghToken = await getGhToken();
@@ -79,7 +103,7 @@ async function main() {
     }
   }
 
-  const exitCode = await runContainer(targetPath, ghToken);
+  const exitCode = await runContainer(containerPath, ghToken);
   process.exit(exitCode);
 }
 
