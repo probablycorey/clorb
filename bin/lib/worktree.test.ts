@@ -1,7 +1,19 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, afterEach } from "bun:test";
+import { $ } from "bun";
 import { resolve } from "path";
-import { mkdirSync, rmdirSync } from "fs";
-import { sanitizeBranchName, generateBranchName, branchExists, findUniqueBranchName, countWorktrees } from "./worktree.ts";
+import { existsSync, mkdirSync, rmdirSync } from "fs";
+import { isGitRepo } from "./git.ts";
+import {
+  sanitizeBranchName,
+  generateBranchName,
+  branchExists,
+  findUniqueBranchName,
+  countWorktrees,
+  createWorktree,
+  getWorktreePath,
+  setupWorktree,
+  WorktreeResult,
+} from "./worktree.ts";
 
 const repoRoot = resolve(import.meta.dir, "../..");
 
@@ -85,5 +97,70 @@ describe("countWorktrees", () => {
     rmdirSync(`${testDir}/proj-a`);
     rmdirSync(`${testDir}/proj-b`);
     rmdirSync(testDir);
+  });
+});
+
+describe("createWorktree", () => {
+  const testWorktreePath = "/tmp/clorb-test-worktree";
+  const testBranch = "test-worktree-branch";
+
+  afterEach(async () => {
+    // Cleanup: remove worktree and branch
+    try {
+      await $`git -C ${repoRoot} worktree remove ${testWorktreePath} --force`.quiet();
+    } catch {}
+    try {
+      await $`git -C ${repoRoot} branch -D ${testBranch}`.quiet();
+    } catch {}
+  });
+
+  test("creates worktree at specified path", async () => {
+    await createWorktree(repoRoot, testBranch, testWorktreePath);
+
+    expect(existsSync(testWorktreePath)).toBe(true);
+    expect(await isGitRepo(testWorktreePath)).toBe(true);
+  });
+});
+
+describe("getWorktreePath", () => {
+  test("creates path under /tmp/clorb with project and branch", () => {
+    expect(getWorktreePath("myproject", "feature-x")).toBe(
+      "/tmp/clorb/myproject-feature-x"
+    );
+  });
+
+  test("handles project names with slashes", () => {
+    expect(getWorktreePath("my/project", "main")).toBe(
+      "/tmp/clorb/my-project-main"
+    );
+  });
+});
+
+describe("setupWorktree", () => {
+  const testBranch = "setup-test-branch";
+
+  afterEach(async () => {
+    // Cleanup any created worktrees
+    try {
+      const path = getWorktreePath("clorb", testBranch);
+      await $`git -C ${repoRoot} worktree remove ${path} --force`.quiet();
+    } catch {}
+    try {
+      await $`git -C ${repoRoot} branch -D ${testBranch}`.quiet();
+    } catch {}
+  });
+
+  test("returns error for non-git directory", async () => {
+    const result = await setupWorktree("/tmp", "feature");
+    expect(result.error).toBe("Not a git repository");
+  });
+
+  test("creates worktree and returns paths on success", async () => {
+    const result = await setupWorktree(repoRoot, testBranch);
+
+    expect(result.error).toBeUndefined();
+    expect(result.branchName).toBe(testBranch);
+    expect(result.worktreePath).toBe("/tmp/clorb/clorb-setup-test-branch");
+    expect(existsSync(result.worktreePath!)).toBe(true);
   });
 });
