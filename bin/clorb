@@ -61,36 +61,28 @@ async function listWorktrees(repoPath: string): Promise<void> {
     return;
   }
 
+  const title = `Worktrees for ${basename(repoPath)}`;
   console.log();
-  console.log(fmt.bold(`Worktrees for ${basename(repoPath)}`));
+  console.log(fmt.bold(title));
+  console.log(fmt.dim("─".repeat(title.length)));
   console.log();
 
   for (const info of infos) {
-    const status = formatStatus(info);
-    const age = fmt.dim(formatAge(info.lastModified));
+    const age = fmt.yellow(`(${formatAge(info.lastModified)})`);
+    console.log(`${info.branch} ${age}`);
+    console.log(fmt.dim(`  ${info.path}`));
 
-    console.log(`  ${fmt.bold(info.branch)}`);
-    console.log(`  ${status}  ${age}`);
-    console.log(`  ${fmt.dim(info.path)}\n`);
+    if (info.pr) {
+      const status = info.pr.merged ? "merged" : info.pr.draft ? "draft" : "open";
+      console.log(fmt.dim(`  PR #${info.pr.number} ${status} ${info.pr.url}`));
+    }
+
+    if (info.hasUncommitted) {
+      console.log(fmt.dim(`  ⚠ uncommitted changes`));
+    }
+
+    console.log();
   }
-}
-
-function formatStatus(info: WorktreeInfo): string {
-  const parts: string[] = [];
-
-  if (info.pr?.merged) {
-    parts.push(fmt.green("✓ PR merged"));
-  } else if (info.pr?.draft) {
-    parts.push(fmt.yellow(`◐ PR #${info.pr.number} draft`));
-  } else if (info.pr) {
-    parts.push(fmt.cyan(`● PR #${info.pr.number} open`));
-  }
-
-  if (info.hasUncommitted) {
-    parts.push(fmt.red("⚠ uncommitted changes"));
-  }
-
-  return parts.length > 0 ? parts.join("  ") : fmt.dim("no PR");
 }
 
 interface WorktreeInfo {
