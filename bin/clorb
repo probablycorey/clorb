@@ -71,8 +71,7 @@ async function listWorktrees(repoPath: string): Promise<void> {
 
     console.log(`  ${fmt.bold(info.branch)}`);
     console.log(`  ${status}  ${age}`);
-    console.log(`  ${fmt.dim(info.path)}`);
-    console.log();
+    console.log(`  ${fmt.dim(info.path)}\n`);
   }
 }
 
