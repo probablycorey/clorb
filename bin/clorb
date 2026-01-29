@@ -82,19 +82,21 @@ async function listWorktrees(repoPath: string): Promise<void> {
 
   for (const info of infos) {
     const age = formatAgeColored(info.lastModified);
-    console.log(`${info.branch} ${age}`);
-    console.log(fmt.dim(`  ${info.path}`));
+    const lines = [
+      `${info.branch} ${age}`,
+      fmt.dim(`  ${info.path}`),
+    ];
 
     if (info.pr) {
       const status = info.pr.merged ? "(merged)" : info.pr.draft ? "(draft)" : "(open)";
-      console.log(fmt.dim(`  PR #${info.pr.number} ${status} ${info.pr.url}`));
+      lines.push(fmt.dim(`  PR #${info.pr.number} ${status} ${info.pr.url}`));
     }
 
     if (info.hasUncommitted) {
-      console.log(fmt.dim(`  ⚠ uncommitted changes`));
+      lines.push(fmt.dim(`  ⚠ uncommitted changes`));
     }
 
-    console.log();
+    console.log(lines.join("\n") + "\n");
   }
 }
 
