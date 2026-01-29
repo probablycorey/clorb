@@ -36,7 +36,7 @@ Arguments:
 Options:
   --list        List all worktrees for this project with PR status
   --clean       Interactively remove worktrees (moves to trash)
-  --gh          Enable GitHub CLI authentication (requires 'gh auth login')
+  --no-gh       Disable GitHub CLI authentication
   --rebuild     Rebuild the Docker image and exit
   -h, --help    Show this help message
 
@@ -325,12 +325,12 @@ async function main() {
   }
 
   // Parse flags early so we can handle --list and --clean without Docker
-  let mountGh = false;
+  let noGh = false;
   let listMode = false;
   let cleanMode = false;
   const remaining: string[] = [];
   for (const arg of args) {
-    if (arg === "--gh") mountGh = true;
+    if (arg === "--no-gh") noGh = true;
     else if (arg === "--list") listMode = true;
     else if (arg === "--clean") cleanMode = true;
     else if (arg === "--rebuild") {} // handled below
@@ -400,11 +400,10 @@ async function main() {
   console.log(`Branch: ${result.branchName}`);
 
   let ghToken: string | null = null;
-  if (mountGh) {
+  if (!noGh) {
     ghToken = await getGhToken();
     if (!ghToken) {
-      console.error("Error: gh is not authenticated. Run 'gh auth login' first.");
-      process.exit(1);
+      console.log("Note: gh not authenticated. Run 'gh auth login' to enable GitHub features.");
     }
   }
 
