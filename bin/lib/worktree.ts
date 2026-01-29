@@ -1,117 +1,109 @@
 import { $ } from "bun";
-import { existsSync, readdirSync, statSync } from "fs";
-import { basename } from "path";
-import { isGitRepo } from "./git.ts";
+import { basename, join } from "path";
+import { homedir } from "os";
 
-export function sanitizeBranchName(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "") // strip special chars
-    .replace(/\s+/g, "-") // spaces to hyphens
-    .replace(/-+/g, "-") // collapse multiple hyphens
-    .replace(/^-|-$/g, ""); // trim leading/trailing hyphens
-}
-
-export function generateBranchName(): string {
+function generateBranchName(baseBranch: string): string {
   const now = new Date();
   const month = now.toLocaleDateString("en-US", { month: "short" }).toLowerCase();
   const day = now.getDate();
-  const time = now
-    .toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
-    .toLowerCase()
-    .replace(/[:\s]/g, "");
-  return `clorb-${month}-${day}-${time}`;
+  const h = String(now.getHours()).padStart(2, "0");
+  const m = String(now.getMinutes()).padStart(2, "0");
+  const s = String(now.getSeconds()).padStart(2, "0");
+  return `clorb/${baseBranch}-${month}${day}-${h}${m}${s}`;
 }
 
-export async function branchExists(repoPath: string, branchName: string): Promise<boolean> {
+export async function getCurrentBranch(repoPath: string): Promise<string> {
   try {
-    await $`git -C ${repoPath} rev-parse --verify refs/heads/${branchName}`.quiet();
-    return true;
+    const result = await $`git -C ${repoPath} rev-parse --abbrev-ref HEAD`.quiet();
+    const branch = result.text().trim();
+    return branch === "HEAD" ? "detached" : branch;
   } catch {
-    return false;
+    return "unknown";
   }
 }
 
-export async function findUniqueBranchName(repoPath: string, baseName: string): Promise<string> {
-  let candidate = baseName;
-  let suffix = 2;
-
-  while (await branchExists(repoPath, candidate)) {
-    candidate = `${baseName}-${suffix}`;
-    suffix++;
-  }
-
-  return candidate;
+async function copyWorkingChanges(sourceRepo: string, worktreePath: string): Promise<void> {
+  await $`rsync -a --exclude='.git' ${sourceRepo}/ ${worktreePath}/`;
 }
 
-export function countWorktrees(basePath: string): number {
-  if (!existsSync(basePath)) {
-    return 0;
-  }
-
-  try {
-    const entries = readdirSync(basePath);
-    return entries.filter((entry) => {
-      const fullPath = `${basePath}/${entry}`;
-      return statSync(fullPath).isDirectory();
-    }).length;
-  } catch {
-    return 0;
-  }
+async function copyEnvFiles(sourceRepo: string, worktreePath: string): Promise<void> {
+  await $`rsync -a --include='.env*' --exclude='*' ${sourceRepo}/ ${worktreePath}/`;
 }
 
-export async function createWorktree(
-  repoPath: string,
-  branchName: string,
-  worktreePath: string
-): Promise<void> {
-  await $`git -C ${repoPath} worktree add -b ${branchName} ${worktreePath}`;
-}
-
-const WORKTREE_BASE = "/tmp/clorb";
-
-export function getWorktreePath(projectName: string, branchName: string): string {
-  const safeName = projectName.replace(/\//g, "-");
-  return `${WORKTREE_BASE}/${safeName}-${branchName}`;
+function getWorktreePath(projectName: string, branchName: string): string {
+  const base = join(homedir(), ".clorb", "worktrees");
+  const safeBranch = branchName.replace(/\//g, "-");
+  return join(base, projectName, safeBranch);
 }
 
 export interface WorktreeResult {
   worktreePath?: string;
   branchName?: string;
-  worktreeCount?: number;
   error?: string;
 }
 
-export async function setupWorktree(
-  repoPath: string,
-  branchInput: string
-): Promise<WorktreeResult> {
-  // Validate git repo
-  if (!(await isGitRepo(repoPath))) {
-    return { error: "Not a git repository" };
-  }
+export async function listBranches(repoPath: string): Promise<string[]> {
+  const result = await $`git -C ${repoPath} branch --format='%(refname:short)'`.quiet();
+  return result
+    .text()
+    .trim()
+    .split("\n")
+    .filter((b) => b.length > 0);
+}
 
-  // Determine branch name
-  const baseBranch = branchInput.trim()
-    ? sanitizeBranchName(branchInput)
-    : generateBranchName();
-
-  // Find unique branch name
-  const branchName = await findUniqueBranchName(repoPath, baseBranch);
-
-  // Build worktree path
+export async function setupWorktreeFromCurrent(repoPath: string): Promise<WorktreeResult> {
+  const currentBranch = await getCurrentBranch(repoPath);
+  const branchName = generateBranchName(currentBranch);
   const projectName = basename(repoPath);
   const worktreePath = getWorktreePath(projectName, branchName);
 
-  // Create the worktree
-  await createWorktree(repoPath, branchName, worktreePath);
+  await $`git -C ${repoPath} worktree add -b ${branchName} ${worktreePath}`;
+  await copyWorkingChanges(repoPath, worktreePath);
 
-  // Count existing worktrees for nudge
-  const worktreeCount = countWorktrees(WORKTREE_BASE);
+  return { worktreePath, branchName };
+}
 
-  return {
-    worktreePath,
-    branchName,
-    worktreeCount,
-  };
+export async function setupWorktreeFromBranch(
+  repoPath: string,
+  branchName: string
+): Promise<WorktreeResult> {
+  const projectName = basename(repoPath);
+  const worktreePath = getWorktreePath(projectName, branchName);
+
+  // Checkout existing branch directly (no -b flag)
+  await $`git -C ${repoPath} worktree add ${worktreePath} ${branchName}`;
+  await copyEnvFiles(repoPath, worktreePath);
+
+  return { worktreePath, branchName };
+}
+
+export async function setupWorktreeFromOriginMain(
+  repoPath: string,
+  customBranchName?: string,
+  createDraftPr?: boolean
+): Promise<WorktreeResult> {
+  console.log("Fetching latest from origin...");
+  await $`git -C ${repoPath} fetch origin`;
+
+  const branchName = customBranchName?.trim()
+    ? customBranchName.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-")
+    : generateBranchName("main");
+
+  const projectName = basename(repoPath);
+  const worktreePath = getWorktreePath(projectName, branchName);
+
+  await $`git -C ${repoPath} worktree add -b ${branchName} ${worktreePath} origin/main`;
+  await copyEnvFiles(repoPath, worktreePath);
+
+  if (createDraftPr) {
+    await $`git -C ${worktreePath} commit --allow-empty -m "WIP"`;
+    console.log("Pushing branch to origin...");
+    await $`git -C ${worktreePath} push -u origin ${branchName}`;
+    console.log("Creating draft PR...");
+    const prTitle = customBranchName?.trim() || branchName;
+    const result = await $`gh pr create --draft --title ${prTitle} --body "Work in progress"`.cwd(worktreePath);
+    console.log(result.text().trim());
+  }
+
+  return { worktreePath, branchName };
 }

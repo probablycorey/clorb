@@ -1,5 +1,5 @@
 import { $ } from "bun";
-import { resolve, dirname, basename } from "path";
+import { resolve, dirname } from "path";
 
 const SCRIPT_DIR = dirname(Bun.main);
 const REPO_DIR = dirname(SCRIPT_DIR);
@@ -38,10 +38,10 @@ export async function getGhToken(): Promise<string | null> {
 }
 
 export async function runContainer(
-  targetPath: string,
+  worktreePath: string,
+  originalRepoPath: string,
   ghToken: string | null
 ): Promise<number> {
-  const dirName = basename(targetPath);
 
   // Build image if needed
   if (!(await imageExists())) {
@@ -60,8 +60,8 @@ export async function runContainer(
 
   const env: Record<string, string> = {
     ...baseEnv,
-    CLORB_TARGET_PATH: targetPath,
-    CLORB_DIR_NAME: dirName,
+    CLORB_WORKTREE_PATH: worktreePath,
+    CLORB_ORIGINAL_REPO_PATH: originalRepoPath,
     CLORB_IMAGE_NAME: IMAGE_NAME,
   };
 

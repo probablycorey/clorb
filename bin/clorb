@@ -1,10 +1,30 @@
 #!/usr/bin/env bun
 
-import { existsSync } from "fs";
-import { resolve } from "path";
-import { verifyGitStatus } from "./lib/preflight.ts";
+import { existsSync, readdirSync, statSync } from "fs";
+import { resolve, basename, join } from "path";
+import { homedir } from "os";
+import { $ } from "bun";
 import { dockerExists, buildImage, getGhToken, runContainer } from "./lib/docker.ts";
-import { setupWorktree } from "./lib/worktree.ts";
+
+// Terminal formatting (respects NO_COLOR and non-TTY)
+const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
+const fmt = {
+  bold: (s: string) => useColor ? `\x1b[1m${s}\x1b[0m` : s,
+  dim: (s: string) => useColor ? `\x1b[2m${s}\x1b[0m` : s,
+  green: (s: string) => useColor ? `\x1b[32m${s}\x1b[0m` : s,
+  yellow: (s: string) => useColor ? `\x1b[33m${s}\x1b[0m` : s,
+  cyan: (s: string) => useColor ? `\x1b[36m${s}\x1b[0m` : s,
+  red: (s: string) => useColor ? `\x1b[31m${s}\x1b[0m` : s,
+};
+import {
+  setupWorktreeFromCurrent,
+  setupWorktreeFromBranch,
+  setupWorktreeFromOriginMain,
+  listBranches,
+  getCurrentBranch,
+  WorktreeResult,
+} from "./lib/worktree.ts";
+import { isGitRepo } from "./lib/git.ts";
 
 const USAGE = `clorb - Run Claude Code in an isolated Docker container
 
@@ -14,25 +34,331 @@ Arguments:
   <path>        Directory to mount and work in (must be a git repo)
 
 Options:
+  --list        List all worktrees for this project with PR status
+  --clean       Interactively remove worktrees (moves to trash)
   --gh          Enable GitHub CLI authentication (requires 'gh auth login')
   --rebuild     Rebuild the Docker image and exit
   -h, --help    Show this help message
 
 Behavior:
-  clorb always creates a git worktree for isolated work. You'll be prompted
-  for a branch name (press Enter for auto-generated name).
+  clorb creates a git worktree in ~/.clorb/worktrees/ for isolated work.
+  You'll be prompted to choose your starting point:
+    1. Current state (branch + uncommitted changes)
+    2. An existing branch (clean checkout)
+    3. Fresh from origin/main
 
 Examples:
-  clorb .                  Run Claude in a new worktree (prompts for branch)
+  clorb .                  Run Claude in a new worktree
   clorb ~/projects/myapp   Run Claude in a specific project
   clorb --gh .             Run with GitHub CLI access for PRs and issues
   clorb --rebuild          Rebuild the container image`;
+
+async function listWorktrees(repoPath: string): Promise<void> {
+  const infos = await getWorktreeInfos(repoPath);
+
+  if (infos.length === 0) {
+    console.log("No worktrees found for this project.");
+    return;
+  }
+
+  console.log();
+  console.log(fmt.bold(`Worktrees for ${basename(repoPath)}`));
+  console.log();
+
+  for (const info of infos) {
+    const status = formatStatus(info);
+    const age = fmt.dim(formatAge(info.lastModified));
+
+    console.log(`  ${fmt.bold(info.branch)}`);
+    console.log(`  ${status}  ${age}`);
+    console.log(`  ${fmt.dim(info.path)}`);
+    console.log();
+  }
+}
+
+function formatStatus(info: WorktreeInfo): string {
+  const parts: string[] = [];
+
+  if (info.pr?.merged) {
+    parts.push(fmt.green("✓ PR merged"));
+  } else if (info.pr?.draft) {
+    parts.push(fmt.yellow(`◐ PR #${info.pr.number} draft`));
+  } else if (info.pr) {
+    parts.push(fmt.cyan(`● PR #${info.pr.number} open`));
+  }
+
+  if (info.hasUncommitted) {
+    parts.push(fmt.red("⚠ uncommitted changes"));
+  }
+
+  return parts.length > 0 ? parts.join("  ") : fmt.dim("no PR");
+}
+
+interface WorktreeInfo {
+  path: string;
+  branch: string;
+  lastModified: Date;
+  hasUncommitted: boolean;
+  pr?: { number: number; url: string; draft: boolean; merged: boolean };
+}
+
+async function getWorktreeInfos(repoPath: string): Promise<WorktreeInfo[]> {
+  const projectName = basename(repoPath);
+  const worktreeBase = join(homedir(), ".clorb", "worktrees", projectName);
+
+  if (!existsSync(worktreeBase)) return [];
+
+  const entries = readdirSync(worktreeBase).filter((e) =>
+    existsSync(join(worktreeBase, e, ".git"))
+  );
+
+  // Get PRs for this repo
+  let prs: { branch: string; number: number; url: string; draft: boolean; merged: boolean }[] = [];
+  try {
+    const result = await $`gh pr list --state all --json headRefName,number,url,isDraft,mergedAt`.cwd(repoPath).quiet();
+    prs = JSON.parse(result.text()).map((pr: any) => ({
+      branch: pr.headRefName,
+      number: pr.number,
+      url: pr.url,
+      draft: pr.isDraft,
+      merged: !!pr.mergedAt,
+    }));
+  } catch {}
+
+  const infos: WorktreeInfo[] = [];
+  for (const entry of entries) {
+    const worktreePath = join(worktreeBase, entry);
+
+    let branch = entry;
+    try {
+      const result = await $`git -C ${worktreePath} rev-parse --abbrev-ref HEAD`.quiet();
+      branch = result.text().trim();
+    } catch {}
+
+    let hasUncommitted = false;
+    try {
+      const result = await $`git -C ${worktreePath} status --porcelain`.quiet();
+      hasUncommitted = result.text().trim().length > 0;
+    } catch {}
+
+    const stat = statSync(worktreePath);
+    const pr = prs.find((p) => p.branch === branch);
+
+    infos.push({
+      path: worktreePath,
+      branch,
+      lastModified: stat.mtime,
+      hasUncommitted,
+      pr,
+    });
+  }
+
+  // Sort by last modified, newest first
+  return infos.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+}
+
+function formatAge(date: Date): string {
+  const now = Date.now();
+  const diff = now - date.getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days} days ago`;
+  if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
+  return `${Math.floor(days / 30)} months ago`;
+}
+
+async function cleanWorktrees(repoPath: string): Promise<void> {
+  const infos = await getWorktreeInfos(repoPath);
+
+  if (infos.length === 0) {
+    console.log("No worktrees found for this project.");
+    return;
+  }
+
+  console.log();
+  console.log(fmt.bold(`Worktrees for ${basename(repoPath)}`));
+  console.log();
+
+  // Find longest branch name for alignment
+  const maxBranchLen = Math.max(...infos.map((i) => i.branch.length));
+
+  infos.forEach((info, i) => {
+    const num = fmt.dim(`${i + 1}.`);
+    const branch = info.branch.padEnd(maxBranchLen);
+    const status = formatStatusCompact(info);
+    const age = fmt.dim(formatAge(info.lastModified).padStart(12));
+
+    console.log(`  ${num} ${fmt.bold(branch)}  ${status}  ${age}`);
+  });
+
+  console.log();
+  console.log(fmt.dim("  Paths: ~/.clorb/worktrees/" + basename(repoPath) + "/..."));
+  console.log();
+
+  const input = prompt("Select numbers to delete (e.g. 1,3) or press Enter to cancel: ") || "";
+
+  if (input.trim() === "") {
+    return;
+  }
+
+  const nums = input.split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
+  const toDelete = nums.map((n) => infos[n - 1]).filter(Boolean);
+
+  if (toDelete.length === 0) {
+    console.log("No valid selections.");
+    return;
+  }
+
+  console.log();
+  console.log(fmt.bold("Will move to trash:"));
+  for (const info of toDelete) {
+    console.log(`  ${fmt.red("×")} ${info.branch}`);
+  }
+
+  console.log();
+  const confirm = prompt("Confirm? [y/N]: ") || "";
+  if (confirm.toLowerCase() !== "y") {
+    console.log("Cancelled.");
+    return;
+  }
+
+  console.log();
+  const trashBase = join(homedir(), ".Trash");
+  for (const info of toDelete) {
+    const trashName = `${basename(info.path)}-${Date.now()}`;
+    const trashPath = join(trashBase, trashName);
+
+    try {
+      await $`git -C ${repoPath} worktree remove --force ${info.path}`.quiet();
+    } catch {
+      await $`mv ${info.path} ${trashPath}`;
+    }
+
+    console.log(`  ${fmt.green("✓")} ${info.branch}`);
+  }
+  console.log();
+}
+
+function formatStatusCompact(info: WorktreeInfo): string {
+  const parts: string[] = [];
+
+  if (info.pr?.merged) {
+    parts.push(fmt.green("✓ merged"));
+  } else if (info.pr?.draft) {
+    parts.push(fmt.yellow(`◐ #${info.pr.number} draft`));
+  } else if (info.pr) {
+    parts.push(fmt.cyan(`● #${info.pr.number}`));
+  } else {
+    parts.push(fmt.dim("—"));
+  }
+
+  if (info.hasUncommitted) {
+    parts.push(fmt.red("⚠"));
+  }
+
+  return parts.join(" ");
+}
+
+async function promptForBranch(repoPath: string): Promise<string | undefined> {
+  const branches = await listBranches(repoPath);
+  if (branches.length === 0) {
+    console.error("No branches found");
+    return;
+  }
+
+  console.log("\nAvailable branches:");
+  branches.forEach((branch, i) => {
+    console.log(`  ${i + 1}. ${branch}`);
+  });
+
+  const input = prompt("\nSelect branch number:") || "";
+  const num = parseInt(input, 10);
+
+  if (isNaN(num) || num < 1 || num > branches.length) {
+    console.error("Invalid selection");
+    return;
+  }
+
+  return branches[num - 1];
+}
+
+async function promptStartingPoint(repoPath: string): Promise<WorktreeResult> {
+  const currentBranch = await getCurrentBranch(repoPath);
+
+  console.log("\nHow do you want to start?");
+  console.log(`  1. Current state (${currentBranch} + uncommitted changes)`);
+  console.log("  2. From an existing branch (clean)");
+  console.log("  3. Fresh from origin/main");
+
+  const choice = prompt("\nSelect [1-3]:") || "1";
+
+  switch (choice.trim()) {
+    case "1":
+      return setupWorktreeFromCurrent(repoPath);
+
+    case "2": {
+      const branch = await promptForBranch(repoPath);
+      if (!branch) {
+        return { error: "No branch selected" };
+      }
+      return setupWorktreeFromBranch(repoPath, branch);
+    }
+
+    case "3": {
+      const customName = prompt("Branch name (Enter for auto-generated):") || "";
+      const createPr = prompt("Create draft PR? [y/N]:") || "";
+      return setupWorktreeFromOriginMain(repoPath, customName, createPr.toLowerCase() === "y");
+    }
+
+    default:
+      return { error: "Invalid selection" };
+  }
+}
 
 async function main() {
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
     console.log(USAGE);
+    process.exit(0);
+  }
+
+  // Parse flags early so we can handle --list and --clean without Docker
+  let mountGh = false;
+  let listMode = false;
+  let cleanMode = false;
+  const remaining: string[] = [];
+  for (const arg of args) {
+    if (arg === "--gh") mountGh = true;
+    else if (arg === "--list") listMode = true;
+    else if (arg === "--clean") cleanMode = true;
+    else if (arg === "--rebuild") {} // handled below
+    else if (!arg.startsWith("--")) remaining.push(arg);
+    else {
+      console.error(`Error: Unknown option '${arg}'\n`);
+      console.log(USAGE);
+      process.exit(1);
+    }
+  }
+
+  // --list and --clean don't need Docker
+  if (listMode || cleanMode) {
+    if (remaining.length === 0) {
+      console.log(USAGE);
+      process.exit(1);
+    }
+    const targetPath = resolve(remaining[0]);
+    if (!existsSync(targetPath)) {
+      console.error(`Error: Path does not exist: ${targetPath}`);
+      process.exit(1);
+    }
+    if (!(await isGitRepo(targetPath))) {
+      console.error("Error: Not a git repository");
+      process.exit(1);
+    }
+    if (listMode) await listWorktrees(targetPath);
+    else await cleanWorktrees(targetPath);
     process.exit(0);
   }
 
@@ -47,19 +373,6 @@ async function main() {
     process.exit(0);
   }
 
-  // Parse flags
-  let mountGh = false;
-  const remaining: string[] = [];
-  for (const arg of args) {
-    if (arg === "--gh") mountGh = true;
-    else if (!arg.startsWith("--")) remaining.push(arg);
-    else {
-      console.error(`Error: Unknown option '${arg}'\n`);
-      console.log(USAGE);
-      process.exit(1);
-    }
-  }
-
   if (remaining.length === 0) {
     console.log(USAGE);
     process.exit(1);
@@ -71,28 +384,20 @@ async function main() {
     process.exit(1);
   }
 
-  if (!(await verifyGitStatus(targetPath))) {
-    process.exit(0);
+  if (!(await isGitRepo(targetPath))) {
+    console.error("Error: Not a git repository");
+    process.exit(1);
   }
 
-  // Always create worktree - prompt for branch name
-  const branchInput = prompt("Branch name (press Enter for auto-generated):") || "";
-
-  const result = await setupWorktree(targetPath, branchInput);
+  const result = await promptStartingPoint(targetPath);
 
   if (result.error) {
     console.error(`Error: ${result.error}`);
     process.exit(1);
   }
 
-  console.log(`Created worktree: ${result.worktreePath}`);
+  console.log(`\nWorktree: ${result.worktreePath}`);
   console.log(`Branch: ${result.branchName}`);
-
-  if (result.worktreeCount && result.worktreeCount > 5) {
-    console.log(`\nNote: You have ${result.worktreeCount} worktrees in /tmp/clorb/`);
-  }
-
-  const containerPath = result.worktreePath!;
 
   let ghToken: string | null = null;
   if (mountGh) {
@@ -103,7 +408,7 @@ async function main() {
     }
   }
 
-  const exitCode = await runContainer(containerPath, ghToken);
+  const exitCode = await runContainer(result.worktreePath!, targetPath, ghToken);
   process.exit(exitCode);
 }
 
