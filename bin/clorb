@@ -29,10 +29,10 @@ import { isGitRepo } from "./lib/git.ts";
 
 const USAGE = `clorb - Run Claude Code in an isolated Docker container
 
-Usage: clorb [options] <path>
+Usage: clorb [options] [path]
 
 Arguments:
-  <path>        Directory to mount and work in (must be a git repo)
+  [path]        Directory to mount and work in (default: current directory)
 
 Options:
   --list        List all worktrees for this project with PR status
@@ -49,7 +49,7 @@ Behavior:
     3. Fresh from origin/main
 
 Examples:
-  clorb .                  Run Claude in a new worktree
+  clorb                    Run Claude in current directory
   clorb ~/projects/myapp   Run Claude in a specific project
   clorb --gh .             Run with GitHub CLI access for PRs and issues
   clorb --rebuild          Rebuild the container image`;
@@ -355,11 +355,7 @@ async function main() {
 
   // --list and --clean don't need Docker
   if (listMode || cleanMode) {
-    if (remaining.length === 0) {
-      console.log(USAGE);
-      process.exit(1);
-    }
-    const targetPath = resolve(remaining[0]);
+    const targetPath = resolve(remaining[0] ?? ".");
     if (!existsSync(targetPath)) {
       console.error(`Error: Path does not exist: ${targetPath}`);
       process.exit(1);
@@ -384,12 +380,7 @@ async function main() {
     process.exit(0);
   }
 
-  if (remaining.length === 0) {
-    console.log(USAGE);
-    process.exit(1);
-  }
-
-  const targetPath = resolve(remaining[0]);
+  const targetPath = resolve(remaining[0] ?? ".");
   if (!existsSync(targetPath)) {
     console.error(`Error: Path does not exist: ${targetPath}`);
     process.exit(1);
