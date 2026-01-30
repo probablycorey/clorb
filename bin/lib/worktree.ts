@@ -1,6 +1,7 @@
 import { $ } from "bun";
 import { basename, join } from "path";
 import { homedir } from "os";
+import { existsSync } from "fs";
 
 function generateBranchName(baseBranch: string): string {
   const now = new Date();
@@ -69,6 +70,11 @@ export async function setupWorktreeFromBranch(
 ): Promise<WorktreeResult> {
   const projectName = basename(repoPath);
   const worktreePath = getWorktreePath(projectName, branchName);
+
+  // Reuse existing worktree if it exists
+  if (existsSync(worktreePath)) {
+    return { worktreePath, branchName };
+  }
 
   // Checkout existing branch directly (no -b flag)
   await $`git -C ${repoPath} worktree add ${worktreePath} ${branchName}`;
