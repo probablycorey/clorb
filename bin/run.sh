@@ -10,6 +10,7 @@ DOCKER_ARGS=(
     -v "$CLORB_WORKTREE_PATH:$CLORB_WORKTREE_PATH"
     -v "$CLORB_ORIGINAL_REPO_PATH/.git:$CLORB_ORIGINAL_REPO_PATH/.git"
     -v "clorb-claude-config:/home/clorb/.claude"
+    -v "$HOME/.claude/skills:/home/clorb/.claude/skills:ro"
     -v "$HOME/.gitconfig:/tmp/.gitconfig-host:ro"
     -w "$CLORB_WORKTREE_PATH"
 )
