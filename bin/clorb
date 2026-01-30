@@ -199,16 +199,14 @@ async function cleanWorktrees(repoPath: string): Promise<void> {
   });
 
   console.log();
-  console.log(fmt.dim("  Paths: ~/.clorb/worktrees/" + basename(repoPath) + "/..."));
-  console.log();
 
-  const input = prompt("Select numbers to delete (e.g. 1,3) or press Enter to cancel: ") || "";
+  const input = prompt("Select numbers to delete (e.g. 1 3 5) or press Enter to cancel: ") || "";
 
   if (input.trim() === "") {
     return;
   }
 
-  const nums = input.split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
+  const nums = input.split(/[\s,]+/).map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
   const toDelete = nums.map((n) => infos[n - 1]).filter(Boolean);
 
   if (toDelete.length === 0) {
@@ -218,11 +216,18 @@ async function cleanWorktrees(repoPath: string): Promise<void> {
 
   console.log();
   console.log(fmt.bold("Will move to trash:"));
+  console.log();
   for (const info of toDelete) {
-    console.log(`  ${fmt.red("×")} ${info.branch}`);
+    const age = formatAgeColored(info.lastModified);
+    console.log(`  ${fmt.red("×")} ${info.branch} ${age}`);
+    console.log(fmt.dim(`      ${info.path}`));
+    if (info.pr) {
+      const status = info.pr.merged ? "(merged)" : info.pr.draft ? "(draft)" : "(open)";
+      console.log(fmt.dim(`      PR #${info.pr.number} ${status}`));
+    }
+    console.log();
   }
 
-  console.log();
   const confirm = prompt("Confirm? [y/N]: ") || "";
   if (confirm.toLowerCase() !== "y") {
     console.log("Cancelled.");
