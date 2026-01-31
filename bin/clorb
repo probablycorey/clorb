@@ -22,9 +22,10 @@ import {
   setupWorktreeFromCurrent,
   setupWorktreeFromBranch,
   setupWorktreeFromOriginMain,
-  listBranches,
+  listBranchesWithMeta,
   getCurrentBranch,
   WorktreeResult,
+  BranchInfo,
 } from "./lib/worktree.ts";
 import { isGitRepo } from "./lib/git.ts";
 
@@ -59,16 +60,21 @@ Examples:
   clorb start --no-gh      Start without GitHub CLI access
   clorb start --rebuild    Rebuild the container image`;
 
-function formatAgeColored(date: Date): string {
+function getAgeColor(date: Date): (s: string) => string {
   const now = Date.now();
   const diff = now - date.getTime();
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  const text = formatAge(date);
 
-  if (days === 0) return fmt.green(`(${text})`);
-  if (days <= 3) return fmt.yellow(`(${text})`);
-  if (days <= 9) return fmt.orange(`(${text})`);
-  return fmt.red(`(${text})`);
+  if (days === 0) return fmt.green;
+  if (days <= 3) return fmt.yellow;
+  if (days <= 9) return fmt.orange;
+  return fmt.red;
+}
+
+function formatAgeColored(date: Date): string {
+  const color = getAgeColor(date);
+  const text = formatAge(date);
+  return color(`(${text})`);
 }
 
 async function listWorktrees(repoPath: string): Promise<void> {
@@ -277,15 +283,22 @@ function formatStatusCompact(info: WorktreeInfo): string {
 }
 
 async function promptForBranch(repoPath: string): Promise<string | undefined> {
-  const branches = await listBranches(repoPath);
+  const branches = await listBranchesWithMeta(repoPath);
   if (branches.length === 0) {
     console.error("No branches found");
     return;
   }
 
+  // Find longest branch name for alignment
+  const maxBranchLen = Math.max(...branches.map((b) => b.name.length));
+
   console.log("\nAvailable branches:");
   branches.forEach((branch, i) => {
-    console.log(`  ${i + 1}. ${branch}`);
+    const num = fmt.dim(`${i + 1}.`);
+    const color = getAgeColor(branch.lastModified);
+    const name = color(branch.name.padEnd(maxBranchLen));
+    const age = fmt.dim(formatAge(branch.lastModified));
+    console.log(`  ${num} ${name}  ${age}`);
   });
 
   const input = prompt("\nSelect branch number:") || "";
@@ -296,7 +309,7 @@ async function promptForBranch(repoPath: string): Promise<string | undefined> {
     return;
   }
 
-  return branches[num - 1];
+  return branches[num - 1].name;
 }
 
 async function promptStartingPoint(repoPath: string): Promise<WorktreeResult> {
