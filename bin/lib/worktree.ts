@@ -59,7 +59,8 @@ export interface BranchInfo {
 
 export async function listBranchesWithMeta(repoPath: string): Promise<BranchInfo[]> {
   // Get branches sorted by committer date (newest first)
-  const result = await $`git -C ${repoPath} for-each-ref --sort=-committerdate refs/heads/ --format=%(refname:short)|%(committerdate:iso)`.quiet();
+  const format = "%(refname:short)|%(committerdate:iso)";
+  const result = await $`git -C ${repoPath} for-each-ref --sort=-committerdate refs/heads/ --format=${format}`.quiet();
   const lines = result.text().trim().split("\n").filter((l) => l.length > 0);
 
   return lines.map((line) => {
