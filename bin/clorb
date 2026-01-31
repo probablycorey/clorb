@@ -289,12 +289,13 @@ async function promptForBranch(repoPath: string): Promise<string | undefined> {
     return;
   }
 
-  // Find longest branch name for alignment
+  // Find longest branch name and number width for alignment
   const maxBranchLen = Math.max(...branches.map((b) => b.name.length));
+  const numWidth = String(branches.length).length;
 
   console.log("\nAvailable branches:");
   branches.forEach((branch, i) => {
-    const num = fmt.dim(`${i + 1}.`);
+    const num = fmt.dim(`${String(i + 1).padStart(numWidth)}.`);
     const color = getAgeColor(branch.lastModified);
     const name = color(branch.name.padEnd(maxBranchLen));
     const age = fmt.dim(formatAge(branch.lastModified));
