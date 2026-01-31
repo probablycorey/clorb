@@ -52,6 +52,11 @@ export async function listBranches(repoPath: string): Promise<string[]> {
     .filter((b) => b.length > 0);
 }
 
+export async function useCurrentDirectory(repoPath: string): Promise<WorktreeResult> {
+  const branchName = await getCurrentBranch(repoPath);
+  return { worktreePath: repoPath, branchName };
+}
+
 export async function setupWorktreeFromCurrent(repoPath: string): Promise<WorktreeResult> {
   const currentBranch = await getCurrentBranch(repoPath);
   const branchName = generateBranchName(currentBranch);

@@ -18,6 +18,7 @@ const fmt = {
   red: (s: string) => useColor ? `\x1b[31m${s}\x1b[0m` : s,
 };
 import {
+  useCurrentDirectory,
   setupWorktreeFromCurrent,
   setupWorktreeFromBranch,
   setupWorktreeFromOriginMain,
@@ -32,7 +33,7 @@ const USAGE = `clorb - Run Claude Code in an isolated Docker container
 Usage: clorb [command] [path] [options]
 
 Commands:
-  start         Start Claude in a worktree (default if no command given)
+  start         Start Claude in a container (default if no command given)
   list          List all worktrees for this project with PR status
   clean         Interactively remove worktrees (moves to trash)
 
@@ -45,11 +46,10 @@ Options:
   -h, --help    Show this help message
 
 Behavior:
-  clorb creates a git worktree in ~/.clorb/worktrees/ for isolated work.
   You'll be prompted to choose your starting point:
-    1. Current state (branch + uncommitted changes)
-    2. An existing branch (clean checkout)
-    3. Fresh from origin/main
+    1. Current state - mount directory directly (no worktree)
+    2. Existing branch - clean worktree checkout
+    3. Fresh - new branch from origin/main
 
 Examples:
   clorb                    Start Claude in current directory
@@ -303,15 +303,15 @@ async function promptStartingPoint(repoPath: string): Promise<WorktreeResult> {
   const currentBranch = await getCurrentBranch(repoPath);
 
   console.log("\nHow do you want to start?\n");
-  console.log(`  ${fmt.bold("[1]")} Current state     ${fmt.dim(`← ${currentBranch} + uncommitted`)}`);
-  console.log(`  ${fmt.bold("[2]")} Existing branch   ${fmt.dim("← clean checkout")}`);
-  console.log(`  ${fmt.bold("[3]")} Fresh             ${fmt.dim("← from origin/main")}`);
+  console.log(`  ${fmt.bold("[1]")} Current state     ${fmt.dim(`← ${currentBranch}, no worktree`)}`);
+  console.log(`  ${fmt.bold("[2]")} Existing branch   ${fmt.dim("← clean worktree")}`);
+  console.log(`  ${fmt.bold("[3]")} Fresh             ${fmt.dim("← new branch from origin/main")}`);
 
   const choice = prompt("\nSelect [1-3]:") || "1";
 
   switch (choice.trim()) {
     case "1":
-      return setupWorktreeFromCurrent(repoPath);
+      return useCurrentDirectory(repoPath);
 
     case "2": {
       const branch = await promptForBranch(repoPath);
@@ -411,7 +411,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`\nWorktree: ${result.worktreePath}`);
+  console.log(`\nDirectory: ${result.worktreePath}`);
   console.log(`Branch: ${result.branchName}`);
 
   let ghToken: string | null = null;
