@@ -29,16 +29,19 @@ import { isGitRepo } from "./lib/git.ts";
 
 const USAGE = `clorb - Run Claude Code in an isolated Docker container
 
-Usage: clorb [options] [path]
+Usage: clorb [command] [path] [options]
+
+Commands:
+  start         Start Claude in a worktree (default if no command given)
+  list          List all worktrees for this project with PR status
+  clean         Interactively remove worktrees (moves to trash)
 
 Arguments:
   [path]        Directory to mount and work in (default: current directory)
 
 Options:
-  --list        List all worktrees for this project with PR status
-  --clean       Interactively remove worktrees (moves to trash)
-  --no-gh       Disable GitHub CLI authentication
-  --rebuild     Rebuild the Docker image and exit
+  --no-gh       Disable GitHub CLI authentication (start only)
+  --rebuild     Rebuild the Docker image and exit (start only)
   -h, --help    Show this help message
 
 Behavior:
@@ -49,10 +52,12 @@ Behavior:
     3. Fresh from origin/main
 
 Examples:
-  clorb                    Run Claude in current directory
-  clorb ~/projects/myapp   Run Claude in a specific project
-  clorb --gh .             Run with GitHub CLI access for PRs and issues
-  clorb --rebuild          Rebuild the container image`;
+  clorb                    Start Claude in current directory
+  clorb ~/projects/myapp   Start Claude in a specific project
+  clorb list               List worktrees for current project
+  clorb clean .            Interactively clean up worktrees
+  clorb start --no-gh      Start without GitHub CLI access
+  clorb start --rebuild    Rebuild the container image`;
 
 function formatAgeColored(date: Date): string {
   const now = Date.now();
@@ -335,16 +340,23 @@ async function main() {
     process.exit(0);
   }
 
-  // Parse flags early so we can handle --list and --clean without Docker
+  // Determine subcommand (default to "start")
+  const subcommands = ["start", "list", "clean"];
+  let command = "start";
+  let commandArgs = args;
+
+  if (args.length > 0 && subcommands.includes(args[0])) {
+    command = args[0];
+    commandArgs = args.slice(1);
+  }
+
+  // Parse flags and positional args
   let noGh = false;
-  let listMode = false;
-  let cleanMode = false;
+  let rebuild = false;
   const remaining: string[] = [];
-  for (const arg of args) {
+  for (const arg of commandArgs) {
     if (arg === "--no-gh") noGh = true;
-    else if (arg === "--list") listMode = true;
-    else if (arg === "--clean") cleanMode = true;
-    else if (arg === "--rebuild") {} // handled below
+    else if (arg === "--rebuild") rebuild = true;
     else if (!arg.startsWith("--")) remaining.push(arg);
     else {
       console.error(`Error: Unknown option '${arg}'\n`);
@@ -353,8 +365,8 @@ async function main() {
     }
   }
 
-  // --list and --clean don't need Docker
-  if (listMode || cleanMode) {
+  // list and clean don't need Docker
+  if (command === "list" || command === "clean") {
     const targetPath = resolve(remaining[0] ?? ".");
     if (!existsSync(targetPath)) {
       console.error(`Error: Path does not exist: ${targetPath}`);
@@ -364,18 +376,19 @@ async function main() {
       console.error("Error: Not a git repository");
       process.exit(1);
     }
-    if (listMode) await listWorktrees(targetPath);
+    if (command === "list") await listWorktrees(targetPath);
     else await cleanWorktrees(targetPath);
     process.exit(0);
   }
 
+  // start command
   if (!(await dockerExists())) {
     console.error("Error: Docker is not installed.");
     console.error("Install OrbStack from: https://orbstack.dev");
     process.exit(1);
   }
 
-  if (args.includes("--rebuild")) {
+  if (rebuild) {
     await buildImage();
     process.exit(0);
   }

@@ -64,6 +64,22 @@ export async function setupWorktreeFromCurrent(repoPath: string): Promise<Worktr
   return { worktreePath, branchName };
 }
 
+async function findWorktreeForBranch(repoPath: string, branchName: string): Promise<string | null> {
+  try {
+    const result = await $`git -C ${repoPath} worktree list --porcelain`.quiet();
+    const lines = result.text().split("\n");
+    let currentPath = "";
+    for (const line of lines) {
+      if (line.startsWith("worktree ")) {
+        currentPath = line.slice(9);
+      } else if (line.startsWith("branch refs/heads/") && line.slice(18) === branchName) {
+        return currentPath;
+      }
+    }
+  } catch {}
+  return null;
+}
+
 export async function setupWorktreeFromBranch(
   repoPath: string,
   branchName: string
@@ -71,9 +87,15 @@ export async function setupWorktreeFromBranch(
   const projectName = basename(repoPath);
   const worktreePath = getWorktreePath(projectName, branchName);
 
-  // Reuse existing worktree if it exists
+  // Reuse existing worktree if it exists at expected path
   if (existsSync(worktreePath)) {
     return { worktreePath, branchName };
+  }
+
+  // Check if branch is already checked out in another worktree
+  const existingWorktree = await findWorktreeForBranch(repoPath, branchName);
+  if (existingWorktree) {
+    return { worktreePath: existingWorktree, branchName };
   }
 
   // Checkout existing branch directly (no -b flag)
