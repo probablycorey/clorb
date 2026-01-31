@@ -52,6 +52,25 @@ export async function listBranches(repoPath: string): Promise<string[]> {
     .filter((b) => b.length > 0);
 }
 
+export interface BranchInfo {
+  name: string;
+  lastModified: Date;
+}
+
+export async function listBranchesWithMeta(repoPath: string): Promise<BranchInfo[]> {
+  // Get branches sorted by committer date (newest first)
+  const result = await $`git -C ${repoPath} for-each-ref --sort=-committerdate refs/heads/ --format=%(refname:short)|%(committerdate:iso)`.quiet();
+  const lines = result.text().trim().split("\n").filter((l) => l.length > 0);
+
+  return lines.map((line) => {
+    const [name, dateStr] = line.split("|");
+    return {
+      name,
+      lastModified: new Date(dateStr),
+    };
+  });
+}
+
 export async function useCurrentDirectory(repoPath: string): Promise<WorktreeResult> {
   const branchName = await getCurrentBranch(repoPath);
   return { worktreePath: repoPath, branchName };
